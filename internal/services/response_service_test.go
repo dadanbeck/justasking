@@ -7,6 +7,7 @@ import (
 
 func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 	svc := NewSurveyService()
+	responseservice := NewSurveyResponseService(svc)
 
 	question := Question{
 		ID:   "q1",
@@ -47,7 +48,7 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 		CurrentID: "q1",
 	}
 
-	q, err := svc.AnswerQuestion(session, "q1", "yes", survey)
+	q, err := responseservice.AnswerQuestion(session, "q1", "yes", survey)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,6 +65,7 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 
 func TestAnswerQuestion_InvalidQuestion(t *testing.T) {
 	svc := NewSurveyService()
+	responseservice := NewSurveyResponseService(svc)
 	survey := Survey{
 		ID:        "s1",
 		Questions: map[string]Question{},
@@ -75,7 +77,7 @@ func TestAnswerQuestion_InvalidQuestion(t *testing.T) {
 		CurrentID: "q999",
 	}
 
-	q, err := svc.AnswerQuestion(session, "q999", "anything", survey)
+	q, err := responseservice.AnswerQuestion(session, "q999", "anything", survey)
 
 	if err == nil || !strings.Contains(err.Error(), "invalid question") {
 		t.Errorf("expected nil 'invalid question' error, got %v", err)
@@ -88,6 +90,7 @@ func TestAnswerQuestion_InvalidQuestion(t *testing.T) {
 
 func TestAnswerQuestion_NoConditionalMatch(t *testing.T) {
 	svc := NewSurveyService()
+	responseservice := NewSurveyResponseService(svc)
 
 	q1 := Question{
 		ID:   "q1",
@@ -116,7 +119,7 @@ func TestAnswerQuestion_NoConditionalMatch(t *testing.T) {
 		CurrentID: "q1",
 	}
 
-	q, err := svc.AnswerQuestion(session, "q1", "no", survey)
+	q, err := responseservice.AnswerQuestion(session, "q1", "no", survey)
 	if err == nil || !strings.Contains(err.Error(), "next question not found") {
 		t.Errorf("expected 'next question not found' error, got %v", err)
 	}
@@ -130,6 +133,8 @@ func TestAnswerQuestion_NoConditionalMatch(t *testing.T) {
 
 func TestAnswerQuestion_AlreadyCompleted(t *testing.T) {
 	svc := NewSurveyService()
+	responseservice := NewSurveyResponseService(svc)
+
 	survey := Survey{
 		ID:        "s1",
 		Questions: map[string]Question{},
@@ -140,7 +145,7 @@ func TestAnswerQuestion_AlreadyCompleted(t *testing.T) {
 		Completed: true,
 	}
 
-	q, err := svc.AnswerQuestion(session, "q1", "answer", survey)
+	q, err := responseservice.AnswerQuestion(session, "q1", "answer", survey)
 	if err == nil || !strings.Contains(err.Error(), "survery already completed") {
 		t.Errorf("expected 'survery already completed' error, got %v", err)
 	}
