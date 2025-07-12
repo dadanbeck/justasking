@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paulexconde/justasking/pkg/store"
+	"github.com/paulexconde/justasking/internal/pkg/store"
 )
 
 type PaginatedResponse[T any] struct {

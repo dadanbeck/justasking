@@ -7,45 +7,40 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	"github.com/paulexconde/justasking/pkg/fault"
-	"github.com/paulexconde/justasking/pkg/workerpool"
+	"github.com/paulexconde/justasking/internal/pkg/fault"
 )
 
-type dataStoreAfterEffect[T any] struct {
+type dataStore[T any] struct {
 	db         *sqlx.DB
 	tablename  string
 	hooks      Hooks
 	mu         sync.RWMutex
 	dtoFactory func() any
-	jobQueue   *workerpool.WorkerPool
 }
 
-// This Data store will handle the after effect so the native data store can be separated from it to lessen the dependency
-func NewDataStoreAfterEffect[T any](db *sqlx.DB, tablename string, jobQueue *workerpool.WorkerPool, dtoFactory ...func() any) *dataStoreAfterEffect[T] {
+func NewDataStore[T any](db *sqlx.DB, tablename string, dtoFactory ...func() any) *dataStore[T] {
 	var factory func() any
 
 	if len(dtoFactory) > 0 {
 		factory = dtoFactory[0]
 	}
 
-	return &dataStoreAfterEffect[T]{
+	return &dataStore[T]{
 		db:         db,
 		tablename:  tablename,
 		mu:         sync.RWMutex{},
-		jobQueue:   jobQueue,
 		dtoFactory: factory,
 	}
 }
 
-func (s *dataStoreAfterEffect[T]) Base() *sqlx.DB {
+func (s *dataStore[T]) Base() *sqlx.DB {
 	return s.db
 }
 
-func (s *dataStoreAfterEffect[T]) SetHooks(hooks Hooks) {
+func (s *dataStore[T]) SetHooks(hooks Hooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -53,10 +48,9 @@ func (s *dataStoreAfterEffect[T]) SetHooks(hooks Hooks) {
 	s.hooks.PostSave = append(s.hooks.PostSave, hooks.PostSave...)
 	s.hooks.PreDelete = append(s.hooks.PreDelete, hooks.PreDelete...)
 	s.hooks.PostDelete = append(s.hooks.PostDelete, hooks.PostDelete...)
-	s.hooks.AfterSaveCommit = append(s.hooks.AfterSaveCommit, hooks.AfterSaveCommit...)
 }
 
-func (s *dataStoreAfterEffect[T]) QueryRow(ctx context.Context, query string, args ...any) (any, error) {
+func (s *dataStore[T]) QueryRow(ctx context.Context, query string, args ...any) (any, error) {
 	row := s.db.QueryRowContext(ctx, query, args...)
 
 	var result any
@@ -72,7 +66,7 @@ func (s *dataStoreAfterEffect[T]) QueryRow(ctx context.Context, query string, ar
 	return result, nil
 }
 
-func (s *dataStoreAfterEffect[T]) Get(ctx context.Context, query string, args ...any) (*T, error) {
+func (s *dataStore[T]) Get(ctx context.Context, query string, args ...any) (*T, error) {
 	var result T
 
 	if err := s.db.GetContext(ctx, &result, query, args...); err != nil {
@@ -85,7 +79,7 @@ func (s *dataStoreAfterEffect[T]) Get(ctx context.Context, query string, args ..
 	return &result, nil
 }
 
-func (s *dataStoreAfterEffect[T]) Select(ctx context.Context, query string, args ...any) ([]T, error) {
+func (s *dataStore[T]) Select(ctx context.Context, query string, args ...any) ([]T, error) {
 	var results []T
 
 	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
@@ -98,7 +92,7 @@ func (s *dataStoreAfterEffect[T]) Select(ctx context.Context, query string, args
 	return results, nil
 }
 
-func (s *dataStoreAfterEffect[T]) Create(ctx context.Context, data DTO) (any, error) {
+func (s *dataStore[T]) Create(ctx context.Context, data DTO) (any, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -160,19 +154,6 @@ func (s *dataStoreAfterEffect[T]) Create(ctx context.Context, data DTO) (any, er
 		}
 	}
 
-	for _, hook := range s.hooks.AfterSaveCommit {
-		if fn := hook(ctx, data, model, true); fn != nil {
-			jobFn := fn
-			s.jobQueue.Submit(workerpool.WithRetry(3, 500*time.Millisecond, func() error {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				jobFn()
-				return nil
-			}))
-		}
-	}
-
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -180,7 +161,7 @@ func (s *dataStoreAfterEffect[T]) Create(ctx context.Context, data DTO) (any, er
 	return model, nil
 }
 
-func (s *dataStoreAfterEffect[T]) Update(ctx context.Context, id int, data DTO) (any, error) {
+func (s *dataStore[T]) Update(ctx context.Context, id int, data DTO) (any, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -256,21 +237,6 @@ func (s *dataStoreAfterEffect[T]) Update(ctx context.Context, id int, data DTO) 
 		}
 	}
 
-	// Collect post commit jobs
-	for _, hook := range s.hooks.AfterSaveCommit {
-		if fn := hook(ctx, data, updatedModel, false); fn != nil {
-			jobFn := fn
-
-			s.jobQueue.Submit(workerpool.WithRetry(3, 500*time.Millisecond, func() error {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				jobFn()
-				return nil
-			}))
-		}
-	}
-
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -278,7 +244,7 @@ func (s *dataStoreAfterEffect[T]) Update(ctx context.Context, id int, data DTO) 
 	return updatedModel, nil
 }
 
-func (s *dataStoreAfterEffect[T]) DeleteWhere(ctx context.Context, column string, value any) error {
+func (s *dataStore[T]) DeleteWhere(ctx context.Context, column string, value any) error {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
@@ -304,7 +270,7 @@ func (s *dataStoreAfterEffect[T]) DeleteWhere(ctx context.Context, column string
 	return tx.Commit()
 }
 
-func (s *dataStoreAfterEffect[T]) Delete(ctx context.Context, id int) error {
+func (s *dataStore[T]) Delete(ctx context.Context, id int) error {
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
@@ -342,7 +308,7 @@ func (s *dataStoreAfterEffect[T]) Delete(ctx context.Context, id int) error {
 	return tx.Commit()
 }
 
-func (s *dataStoreAfterEffect[T]) BulkUpdate(ctx context.Context, query string, args ...any) error {
+func (s *dataStore[T]) BulkUpdate(ctx context.Context, query string, args ...any) error {
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -364,7 +330,7 @@ func (s *dataStoreAfterEffect[T]) BulkUpdate(ctx context.Context, query string, 
 	return err
 }
 
-func (s *dataStoreAfterEffect[T]) getByIDBase(ctx context.Context, id int) (any, error) {
+func (s *dataStore[T]) getByIDBase(ctx context.Context, id int) (any, error) {
 	var instance any
 	if s.dtoFactory != nil {
 		instance = s.dtoFactory() // ✅ Use the DTO if factory exists

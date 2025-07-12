@@ -22,6 +22,10 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 				Expression: `q1 == "yes"`,
 				NextID:     "q2",
 			},
+			{
+				Expression: `q1 == "no"`,
+				NextID:     "q3",
+			},
 		},
 	}
 
@@ -31,6 +35,15 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 		Type: Text,
 	}
 
+	alternativeNextQuestion := Question{
+		ID:   "q3",
+		Text: "Are you studying?",
+		Options: []string{
+			"yes",
+			"no",
+		},
+	}
+
 	survey := Survey{
 		ID:      "s1",
 		Title:   "Age Check",
@@ -38,6 +51,7 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 		Questions: map[string]Question{
 			"q1": question,
 			"q2": nextQuestion,
+			"q3": alternativeNextQuestion,
 		},
 	}
 
@@ -57,6 +71,78 @@ func TestAnswerQuestion_WithValidConditionalMatch(t *testing.T) {
 	}
 	if session.CurrentID != "q2" {
 		t.Errorf("expected session.CurrentID to be q2, got %s", session.CurrentID)
+	}
+	if !session.Completed {
+		t.Errorf("expected session to be marked completed")
+	}
+}
+
+func TestAnswerQuestion_AlternativeMatch(t *testing.T) {
+	svc := NewSurveyService()
+	responseservice := NewSurveyResponseService(svc)
+
+	question := Question{
+		ID:   "q1",
+		Text: "Are you over 18?",
+		Type: MultipleChoice,
+		Options: []string{
+			"yes",
+			"no",
+		},
+		Conditionals: []ConditionalNext{
+			{
+				Expression: `q1 == "yes"`,
+				NextID:     "q2",
+			},
+			{
+				Expression: `q1 == "no"`,
+				NextID:     "q3",
+			},
+		},
+	}
+
+	nextQuestion := Question{
+		ID:   "q2",
+		Text: "What is your occupation?",
+		Type: Text,
+	}
+
+	alternativeNextQuestion := Question{
+		ID:   "q3",
+		Text: "Are you studying?",
+		Options: []string{
+			"yes",
+			"no",
+		},
+	}
+
+	survey := Survey{
+		ID:      "s1",
+		Title:   "Age Check",
+		StartID: "q1",
+		Questions: map[string]Question{
+			"q1": question,
+			"q2": nextQuestion,
+			"q3": alternativeNextQuestion,
+		},
+	}
+
+	session := &SurveySession{
+		ID:        "sess1",
+		SurveyID:  "s1",
+		Answers:   make(map[string]any),
+		CurrentID: "q1",
+	}
+
+	q, err := responseservice.AnswerQuestion(session, "q1", "no", survey)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q == nil || q.ID != "q3" {
+		t.Errorf("expected next question to be q3, got %v", q)
+	}
+	if session.CurrentID != "q3" {
+		t.Errorf("expected session.CurrentID to be q3, got %s", session.CurrentID)
 	}
 	if !session.Completed {
 		t.Errorf("expected session to be marked completed")
@@ -146,8 +232,8 @@ func TestAnswerQuestion_AlreadyCompleted(t *testing.T) {
 	}
 
 	q, err := responseservice.AnswerQuestion(session, "q1", "answer", survey)
-	if err == nil || !strings.Contains(err.Error(), "survery already completed") {
-		t.Errorf("expected 'survery already completed' error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "survey already completed") {
+		t.Errorf("expected 'survey already completed' error, got %v", err)
 	}
 	if q != nil {
 		t.Errorf("expected nil question, got %+v", q)

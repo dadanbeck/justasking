@@ -34,7 +34,7 @@ type Question struct {
 	Conditionals []ConditionalNext
 }
 
-// The Survery object.
+// The Survey object.
 type Survey struct {
 	ID        string
 	Title     string
@@ -59,7 +59,7 @@ type Answer struct {
 	Value      any
 }
 
-// Contains the collection of answers in every survery.
+// Contains the collection of answers in every survey.
 type SurveyResponse struct {
 	ID        string
 	SurveyID  string
@@ -99,7 +99,7 @@ func (s *surveyResponseServiceImpl) SaveResponse(response SurveyResponse) error 
 
 func (s *surveyResponseServiceImpl) AnswerQuestion(session *SurveySession, questionID string, answer any, survey Survey) (*Question, error) {
 	if session.Completed {
-		return nil, errors.New("survery already completed")
+		return nil, errors.New("survey already completed")
 	}
 
 	session.Answers[questionID] = answer
